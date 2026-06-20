@@ -1,5 +1,6 @@
 // GET /posts/{id}/comments:
 // { "postId": 1, "id": 1, "name": "...", "email": "...", "body": "..." }
+//Define the structure of a Comment. Convert JSON into a Dart object.
 class Comment {
   final int id;
   final int postId;
