@@ -3,8 +3,12 @@ import 'app_routes.dart';
 
 // route_generator.dart is the ONE place in the app that knows how to turn
 // a route name (a String) into an actual screen widget. MaterialApp calls
-// this automatically every time Navigator.pushNamed() is used.
-//
+// this automatically every time Navigator.pushNamed() is used, flutter asks
+// "hey RouteGenerator, can you give me a screen for this route name?"
+
+// Ex: user clicks login-> Navigator.pushNamed(AppRoutes.login)->
+//RouteGenerator-> returns LoginScreen()
+
 // Why onGenerateRoute instead of MaterialApp's simpler `routes: {...}` map?
 // Because some screens need ARGUMENTS (e.g. PostDetailScreen needs a
 // postId), and the simple `routes` map has no way to receive those. With

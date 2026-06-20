@@ -6,6 +6,8 @@
 // The advantage: route names are typo-proof (autocomplete + compile error
 // if you misspell one), and route_generator.dart becomes the ONE place
 // that knows which screen each name maps to.
+// Compile-time error checking, stores all route names in one place.
+
 class AppRoutes {
   static const String splash = '/';
   static const String login = '/login';
