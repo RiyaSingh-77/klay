@@ -1,47 +1,50 @@
 import 'package:flutter/material.dart';
 import 'app_routes.dart';
+import '../screens/splash/splash_screen.dart';
+import '../screens/auth/login_screen.dart';
 
 // route_generator.dart is the ONE place in the app that knows how to turn
 // a route name (a String) into an actual screen widget. MaterialApp calls
-// this automatically every time Navigator.pushNamed() is used, flutter asks
-// "hey RouteGenerator, can you give me a screen for this route name?"
-
-// Ex: user clicks login-> Navigator.pushNamed(AppRoutes.login)->
-//RouteGenerator-> returns LoginScreen()
-
+// this automatically every time Navigator.pushNamed() is used.
+//
 // Why onGenerateRoute instead of MaterialApp's simpler `routes: {...}` map?
-// Because some screens need ARGUMENTS (e.g. PostDetailScreen needs a
-// postId), and the simple `routes` map has no way to receive those. With
-// onGenerateRoute, settings.arguments carries whatever was passed to
-// pushNamed(), and we can extract and validate it here in one place.
+// Because several screens need ARGUMENTS (PostDetailScreen needs a
+// postId, AuthorProfileScreen needs a userId, AlbumPhotosScreen needs an
+// albumId) — the simple `routes` map has no way to receive those.
+// settings.arguments carries whatever was passed to pushNamed(), and we
+// extract + validate it here in one place rather than in every screen.
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
       case AppRoutes.splash:
-        return _page(const _PlaceholderScreen(title: 'Splash'));
+        return _page(const SplashScreen());
 
       case AppRoutes.login:
-        return _page(const _PlaceholderScreen(title: 'Login'));
+        return _page(const LoginScreen());
 
       case AppRoutes.feed:
-        return _page(const _PlaceholderScreen(title: 'Feed'));
+        return _page(const _PlaceholderScreen(title: 'Feed')); // Phase 7
 
       case AppRoutes.postDetail:
-        // Example of how an argument will be unpacked once PostDetailScreen
-        // exists: `final postId = settings.arguments as int;`
-        return _page(const _PlaceholderScreen(title: 'Post Detail'));
+        // Usage once built: Navigator.pushNamed(context, AppRoutes.postDetail, arguments: post.id);
+        final postId = settings.arguments as int?;
+        return _page(_PlaceholderScreen(title: 'Post Detail (id: $postId)')); // Phase 7
 
       case AppRoutes.authorProfile:
-        return _page(const _PlaceholderScreen(title: 'Author Profile'));
+        // Usage once built: Navigator.pushNamed(context, AppRoutes.authorProfile, arguments: post.userId);
+        final userId = settings.arguments as int?;
+        return _page(_PlaceholderScreen(title: 'Author Profile (userId: $userId)')); // Phase 8
 
       case AppRoutes.albumPhotos:
-        return _page(const _PlaceholderScreen(title: 'Album Photos'));
+        // Usage once built: Navigator.pushNamed(context, AppRoutes.albumPhotos, arguments: album.id);
+        final albumId = settings.arguments as int?;
+        return _page(_PlaceholderScreen(title: 'Album Photos (albumId: $albumId)')); // Phase 8
 
       case AppRoutes.createPost:
-        return _page(const _PlaceholderScreen(title: 'Create Post'));
+        return _page(const _PlaceholderScreen(title: 'Create Post')); // Phase 9
 
       case AppRoutes.library:
-        return _page(const _PlaceholderScreen(title: 'Library'));
+        return _page(const _PlaceholderScreen(title: 'Library')); // Phase 10
 
       default:
         // Defensive fallback — if a route name typo ever slips through,
@@ -55,8 +58,8 @@ class RouteGenerator {
   }
 }
 
-// Temporary screen so the app is runnable from Phase 1 onward.
-// Each placeholder gets replaced with its real screen in later phases.
+// Temporary screen for routes not yet built — each gets replaced with its
+// real screen in the phase noted above.
 class _PlaceholderScreen extends StatelessWidget {
   final String title;
   const _PlaceholderScreen({required this.title});
@@ -65,7 +68,7 @@ class _PlaceholderScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(title)),
-      body: Center(child: Text('$title screen — coming in a later phase')),
+      body: Center(child: Text('$title — coming in a later phase')),
     );
   }
 }
