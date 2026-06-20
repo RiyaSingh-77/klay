@@ -4,6 +4,8 @@
 //Because SharedPreferences cannot store Dart objects directly.
 //It only stores primitive values like String, int, bool, and List.
 //Therefore the Draft object must be converted to JSON before saving and reconstructed from JSON when loading.
+//Draft is a locally-created model with no API equivalent — it carries full toJson/fromJson for round-tripping
+//through SharedPreferences, since favorites/drafts have no backend.
 
 class Draft {
   final String id;            // generated locally, not from a server
