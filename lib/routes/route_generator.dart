@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'app_routes.dart';
 import '../screens/splash/splash_screen.dart';
 import '../screens/auth/login_screen.dart';
+import '../screens/feed/feed_screen.dart';
+import '../screens/post_detail/post_detail_screen.dart';
 
 // route_generator.dart is the ONE place in the app that knows how to turn
 // a route name (a String) into an actual screen widget. MaterialApp calls
@@ -23,12 +25,15 @@ class RouteGenerator {
         return _page(const LoginScreen());
 
       case AppRoutes.feed:
-        return _page(const _PlaceholderScreen(title: 'Feed')); // Phase 7
+        return _page(const FeedScreen());
 
       case AppRoutes.postDetail:
-        // Usage once built: Navigator.pushNamed(context, AppRoutes.postDetail, arguments: post.id);
+        // Usage: Navigator.pushNamed(context, AppRoutes.postDetail, arguments: post.id);
         final postId = settings.arguments as int?;
-        return _page(_PlaceholderScreen(title: 'Post Detail (id: $postId)')); // Phase 7
+        if (postId == null) {
+          return _page(const _PlaceholderScreen(title: 'Post Detail — missing postId'));
+        }
+        return _page(PostDetailScreen(postId: postId));
 
       case AppRoutes.authorProfile:
         // Usage once built: Navigator.pushNamed(context, AppRoutes.authorProfile, arguments: post.userId);

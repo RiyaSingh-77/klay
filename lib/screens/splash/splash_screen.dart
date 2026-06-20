@@ -27,7 +27,7 @@ class _SplashScreenState extends State<SplashScreen> {
     await context.read<LibraryProvider>().loadLibrary();
     // A short artificial delay so the splash doesn't flash by instantly
     // on a fast connection — purely cosmetic, not loading anything extra.
-    await Future.delayed(const Duration(milliseconds: 600));
+    await Future.delayed(const Duration(seconds: 3));
     if (mounted) {
       Navigator.pushReplacementNamed(context, AppRoutes.login);
     }

@@ -56,6 +56,22 @@ class ApiService {
     throw Exception('Failed to load user $userId (status ${response.statusCode})');
   }
 
+  // ── All Authors (Feed) ────────────────────────────────────────
+  // The feed needs an author name on every post card, but JSONPlaceholder
+  // only has 10 users total against 100 posts. Fetching /users/{id} once
+  // PER CARD would mean up to 100 HTTP calls for one screen. Instead we
+  // fetch the full /users list ONCE (Phase 7) and let UserProvider build
+  // an id -> User lookup map client-side, so every card after that is a
+  // free in-memory read instead of a network call.
+  Future<List<User>> fetchUsers() async {
+    final response = await http.get(Uri.parse('$_baseUrl/users'));
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((item) => User.fromJson(item)).toList();
+    }
+    throw Exception('Failed to load users (status ${response.statusCode})');
+  }
+
   // ── Albums + Photos (View Albums) ────────────────────────────
   // JSONPlaceholder supports nested-resource routes for "all albums
   // belonging to this user" — equivalent to /albums?userId={id}, but
