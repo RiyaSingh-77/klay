@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../routes/app_routes.dart';
 import '../../widgets/post_detail_author_row.dart';
 
 // PostDetailScreen receives a postId via Navigator arguments (see
@@ -67,7 +68,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
-                PostDetailAuthorRow(authorName: authorName),
+                PostDetailAuthorRow(
+                  authorName: authorName,
+                  onViewProfile: () => Navigator.pushNamed(
+                    context,
+                    AppRoutes.authorProfile,
+                    arguments: post.userId,
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Text(post.title, style: textTheme.headlineSmall),
                 const SizedBox(height: 12),

@@ -4,6 +4,8 @@ import '../screens/splash/splash_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/feed/feed_screen.dart';
 import '../screens/post_detail/post_detail_screen.dart';
+import '../screens/author/author_profile_screen.dart';
+import '../screens/albums/album_photos_screen.dart';
 
 // route_generator.dart is the ONE place in the app that knows how to turn
 // a route name (a String) into an actual screen widget. MaterialApp calls
@@ -36,14 +38,20 @@ class RouteGenerator {
         return _page(PostDetailScreen(postId: postId));
 
       case AppRoutes.authorProfile:
-        // Usage once built: Navigator.pushNamed(context, AppRoutes.authorProfile, arguments: post.userId);
+        // Usage: Navigator.pushNamed(context, AppRoutes.authorProfile, arguments: post.userId);
         final userId = settings.arguments as int?;
-        return _page(_PlaceholderScreen(title: 'Author Profile (userId: $userId)')); // Phase 8
+        if (userId == null) {
+          return _page(const _PlaceholderScreen(title: 'Author Profile — missing userId'));
+        }
+        return _page(AuthorProfileScreen(userId: userId));
 
       case AppRoutes.albumPhotos:
-        // Usage once built: Navigator.pushNamed(context, AppRoutes.albumPhotos, arguments: album.id);
+        // Usage: Navigator.pushNamed(context, AppRoutes.albumPhotos, arguments: album.id);
         final albumId = settings.arguments as int?;
-        return _page(_PlaceholderScreen(title: 'Album Photos (albumId: $albumId)')); // Phase 8
+        if (albumId == null) {
+          return _page(const _PlaceholderScreen(title: 'Album Photos — missing albumId'));
+        }
+        return _page(AlbumPhotosScreen(albumId: albumId));
 
       case AppRoutes.createPost:
         return _page(const _PlaceholderScreen(title: 'Create Post')); // Phase 9
