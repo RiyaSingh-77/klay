@@ -1,5 +1,10 @@
 // Mirrors GET /posts: { "userId": 1, "id": 1, "title": "...", "body": "..." }
 //Post class
+//Serialisation is the process of converting a Dart object into a format that can be easily stored or transmitted,
+// such as JSON. Deserialization is the reverse process, where you convert data from a format like JSON back into a Dart object.
+// In this Post class, we have implemented both serialization (toJson) and deserialization (fromJson) methods to facilitate
+// easy conversion between Dart objects and JSON data when interacting with APIs.
+// Created a Post class that can both read JSON from an API and convert itself back into JSON when sending data to an API.
 class Post {
   final int id;
   final int userId;
