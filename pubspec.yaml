@@ -30,6 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  provider: ^6.1.2          # state management — same pattern as your last two projects
+  http: ^1.2.2               # talks to JSONPlaceholder
+  google_fonts: ^6.2.1       # typography system (Poppins/Inter/Roboto like your inspo)
+  image_picker: ^1.1.2       # pick a profile image / post image from gallery or camera
+  file_picker: ^8.1.2        # attach a non-image file (PDF, doc) to a post
+  shared_preferences: ^2.3.2 # persists favorites + drafts locally, survives app restart
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
