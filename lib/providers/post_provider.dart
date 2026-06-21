@@ -42,16 +42,37 @@ class PostProvider extends ChangeNotifier {
   // ── View Details ──────────────────────────────────────────────
   // Fetches the post AND its comments together, so the detail screen has
   // one loading state to handle instead of juggling two spinners.
+  //
+  // IMPORTANT: a post created via createPost() below only ever exists in
+  // THIS app's local _posts list — JSONPlaceholder's mock /posts never
+  // actually saves it (see ApiService.createPost's comment). So a plain
+  // GET /posts/{id} for a freshly-created post's id 404s every time,
+  // even though it's sitting right there in _posts. We check the local
+  // list FIRST and only hit the network if it's genuinely not there.
   Future<void> fetchPostDetail(int id) async {
     _isLoading = true;
     _errorMessage = null;
     _selectedPost = null;
     _comments = [];
     notifyListeners();
-  // Provider asks ApiService:
-  //Give me all posts. ApiService performs HTTP GET /posts
-  //and returns a list of Post objects. 
-  //Provider saves that list in _posts and calls notifyListeners() so the UI updates.
+
+    final localMatch = _posts.where((p) => p.id == id).toList();
+    if (localMatch.isNotEmpty) {
+      _selectedPost = localMatch.first;
+      // Comments are still worth trying over the network even for a
+      // locally-created post — JSONPlaceholder's nested /comments route
+      // returns an empty list (not a 404) for an unknown parent id, so
+      // this just resolves to "no comments yet" rather than erroring.
+      try {
+        _comments = await _apiService.fetchComments(id);
+      } catch (e) {
+        _comments = [];
+      }
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+
     try {
       _selectedPost = await _apiService.fetchPost(id);
       _comments = await _apiService.fetchComments(id);
