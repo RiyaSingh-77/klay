@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -71,10 +72,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   // frozen. We don't use the bytes for anything yet, so we don't ask for
   // them — if a "preview attachment" feature gets added later, request
   // bytes there, scoped to just that feature.
+  // FilePicker.pickFiles() has known, reported issues on Flutter Web
+  // where it hangs specifically for certain MIME types (PDF being a
+  // common one) on some Chrome versions — this is a third-party plugin
+  // behavior, not something fixable from inside this app. The
+  // responsible move is the same one we used for ApiService: never let
+  // a call sit unbounded. .timeout() here guarantees the UI recovers
+  // with a clear message instead of spinning forever, regardless of
+  // what's happening inside the plugin.
   Future<void> _pickAttachment() async {
     setState(() => _isPickingAttachment = true);
     try {
-      final result = await FilePicker.platform.pickFiles();
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'doc', 'docx', 'txt', 'zip', 'jpg', 'png'],
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('Attachment picker timed out — try a different file.'),
+      );
       if (result != null && result.files.isNotEmpty) {
         setState(() => _pickedAttachment = result.files.first);
       }
@@ -107,43 +122,67 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final postProvider = context.read<PostProvider>();
     final libraryProvider = context.read<LibraryProvider>();
 
-    final newPost = await postProvider.createPost(title: title, body: body);
+    // Everything from here down is wrapped in try/finally on purpose.
+    // Previously, if saveDraft() (or anything after createPost succeeded)
+    // threw for any reason, the function would exit without ever
+    // reaching the setState that turns _isSubmitting back to false —
+    // leaving the POST button spinning forever with no way to recover
+    // short of a hot restart. finally guarantees that reset always runs.
+    try {
+      final newPost = await postProvider.createPost(title: title, body: body);
 
-    if (newPost == null) {
-      setState(() => _isSubmitting = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(postProvider.errorMessage ?? 'Could not create post.')),
-        );
+      if (newPost == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(postProvider.errorMessage ?? 'Could not create post.')),
+          );
+        }
+        return;
       }
-      return;
+
+      // Pair the local media to the post that was just created, keyed by
+      // the SAME id JSONPlaceholder handed back — not a fresh timestamp
+      // id like Draft.create() would generate, since this isn't an
+      // unsent draft, it's metadata riding alongside a post that
+      // already exists.
+      if (_pickedImage != null || _pickedAttachment != null) {
+        await libraryProvider.saveDraft(Draft(
+          id: newPost.id.toString(),
+          title: title,
+          body: body,
+          imagePath: _pickedImage?.path,
+          // PlatformFile.path is a known trap on Flutter Web — unlike most
+          // nullable getters, it doesn't quietly return null when there's
+          // no real filesystem path to give you, it THROWS instead (see
+          // https://github.com/miguelpruivo/flutter_file_picker/wiki/FAQ).
+          // That exception was firing inside saveDraft() and killing this
+          // function before _isSubmitting ever got reset — the real cause
+          // of the stuck spinner. kIsWeb guards it: on web we just never
+          // touch .path at all, since we don't use it for anything beyond
+          // the (web-only) image preview, which already goes through
+          // bytes instead, never path.
+          attachmentPath: kIsWeb ? null : _pickedAttachment?.path,
+          attachmentName: _pickedAttachment?.name,
+          createdAt: DateTime.now(),
+        ));
+      }
+
+      if (!mounted) return;
+
+      // Pop back to Feed rather than pushNamed — CreatePostScreen was
+      // pushed ON TOP of Feed (via the FAB), and PostProvider.createPost()
+      // already inserted newPost at index 0 of the SAME _posts list Feed
+      // is watching. Popping back just reveals it, already at the top —
+      // no separate "refresh" or argument-passing needed.
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Something went wrong: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
-
-    // Pair the local media to the post that was just created, keyed by
-    // the SAME id JSONPlaceholder handed back — not a fresh timestamp id
-    // like Draft.create() would generate, since this isn't an unsent
-    // draft, it's metadata riding alongside a post that already exists.
-    if (_pickedImage != null || _pickedAttachment != null) {
-      await libraryProvider.saveDraft(Draft(
-        id: newPost.id.toString(),
-        title: title,
-        body: body,
-        imagePath: _pickedImage?.path,
-        attachmentPath: _pickedAttachment?.path,
-        attachmentName: _pickedAttachment?.name,
-        createdAt: DateTime.now(),
-      ));
-    }
-
-    if (!mounted) return;
-    setState(() => _isSubmitting = false);
-
-    // Pop back to Feed rather than pushNamed — CreatePostScreen was
-    // pushed ON TOP of Feed (via the FAB), and PostProvider.createPost()
-    // already inserted newPost at index 0 of the SAME _posts list Feed
-    // is watching. Popping back just reveals it, already at the top —
-    // no separate "refresh" or argument-passing needed.
-    Navigator.pop(context);
   }
 
   @override
