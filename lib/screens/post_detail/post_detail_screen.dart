@@ -65,7 +65,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Post')),
+      appBar: AppBar(
+        title: const Text('Post'),
+        actions: [
+          Consumer<PostProvider>(
+            builder: (context, postProvider, _) {
+              final post = postProvider.selectedPost;
+              if (post == null) return const SizedBox.shrink();
+              // Reading isFavorite here via context.watch (not read) so
+              // the icon flips instantly on tap — toggleFavorite() calls
+              // notifyListeners() before it persists to disk, so the UI
+              // never waits on SharedPreferences to feel responsive.
+              final isFavorite = context.watch<LibraryProvider>().isFavorite(post.id);
+              return IconButton(
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavorite ? AppTheme.primary : null,
+                ),
+                onPressed: () => context.read<LibraryProvider>().toggleFavorite(post.id),
+              );
+            },
+          ),
+        ],
+      ),
       body: Consumer<PostProvider>(
         builder: (context, postProvider, _) {
           if (postProvider.isLoading) {
@@ -126,12 +148,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       height: 220,
                       width: double.infinity,
                       color: AppTheme.surface,
-                      // Image.network works here even though imagePath is
-                      // a blob: URL (Flutter Web's object URL for a
-                      // locally-picked file), not a real http(s) address —
-                      // the browser resolves blob: URLs the same way it
-                      // resolves any other image src, as long as we're
-                      // still in the same tab/session that created it.
                       child: Image.network(
                         imagePath,
                         fit: BoxFit.contain,
@@ -143,9 +159,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                   const SizedBox(height: 20),
                 ],
-                // Attachment chip — same visual pattern CreatePostScreen
-                // uses for _pickedAttachment, now wrapped in InkWell so
-                // tapping it actually opens the file via _openAttachment.
                 if (attachmentName != null && attachmentName.isNotEmpty) ...[
                   Material(
                     color: AppTheme.surface,

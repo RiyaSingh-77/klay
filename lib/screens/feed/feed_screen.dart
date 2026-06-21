@@ -44,6 +44,12 @@ class _FeedScreenState extends State<FeedScreen> {
       appBar: AppBar(
         title: const Text('Klay'),
         centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bookmark_border),
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.library),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.pushNamed(context, AppRoutes.createPost),
@@ -66,10 +72,6 @@ class _FeedScreenState extends State<FeedScreen> {
           return RefreshIndicator(
             onRefresh: _loadFeed,
             child: ListView.builder(
-              // Even when the list is short, physics stays scrollable so
-              // pull-to-refresh always works — AlwaysScrollableScrollPhysics
-              // is the standard fix for "RefreshIndicator doesn't trigger
-              // on a list that fits on one screen."
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.symmetric(vertical: 12),
               itemCount: postProvider.posts.length,
