@@ -106,7 +106,14 @@ class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
                       crossAxisCount: 2,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
-                      childAspectRatio: 1.3,
+                      // A fixed height (mainAxisExtent) instead of
+                      // childAspectRatio — aspect ratio is computed from
+                      // the cell's WIDTH, which varies a lot between a
+                      // phone, a resized browser window, and a desktop
+                      // build. A fixed 140px tile stays predictable
+                      // everywhere, so the title never gets pushed out
+                      // of view the way it was with ratio-based sizing.
+                      mainAxisExtent: 140,
                     ),
                     itemBuilder: (context, index) {
                       final album = albumProvider.albums[index];

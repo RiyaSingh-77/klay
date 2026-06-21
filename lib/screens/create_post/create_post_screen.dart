@@ -1,0 +1,257 @@
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import '../../models/draft.dart';
+import '../../providers/post_provider.dart';
+import '../../providers/library_provider.dart';
+import '../../theme/app_theme.dart';
+
+// CreatePostScreen sends title + body to JSONPlaceholder via
+// PostProvider.createPost(), but the picked image and file attachment
+// have NO field on JSONPlaceholder's /posts resource — see the comment
+// on ApiService.createPost() for why. So after a successful create, this
+// screen saves a Draft (via LibraryProvider) using the SAME id as the new
+// server post, pairing the local media to the post it belongs to. That's
+// the app's local-persistence boundary, not a workaround.
+class CreatePostScreen extends StatefulWidget {
+  const CreatePostScreen({super.key});
+
+  @override
+  State<CreatePostScreen> createState() => _CreatePostScreenState();
+}
+
+class _CreatePostScreenState extends State<CreatePostScreen> {
+  final _titleController = TextEditingController();
+  final _bodyController = TextEditingController();
+
+  XFile? _pickedImage;
+  Uint8List? _pickedImageBytes; // read once at pick-time for the live preview
+
+  PlatformFile? _pickedAttachment;
+
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _bodyController.dispose();
+    super.dispose();
+  }
+
+  // Reading bytes via XFile.readAsBytes() (instead of Image.file(File(...)))
+  // is what keeps this screen working identically on Flutter Web and on
+  // mobile — dart:io's File class doesn't compile on web at all, so any
+  // code path that touches it directly would need a web/io branch. Bytes
+  // sidestep that entirely.
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    setState(() {
+      _pickedImage = picked;
+      _pickedImageBytes = bytes;
+    });
+  }
+
+  void _removeImage() {
+    setState(() {
+      _pickedImage = null;
+      _pickedImageBytes = null;
+    });
+  }
+
+  // withData: true forces file_picker to populate PlatformFile.bytes on
+  // every platform, not just web (where it's automatic). We don't use the
+  // bytes for anything yet — name + size are enough to show a chip — but
+  // requesting them now means this is ready if a "preview attachment"
+  // feature gets added later, without changing this call site.
+  Future<void> _pickAttachment() async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return;
+    setState(() => _pickedAttachment = result.files.first);
+  }
+
+  void _removeAttachment() {
+    setState(() => _pickedAttachment = null);
+  }
+
+  Future<void> _submit() async {
+    final title = _titleController.text.trim();
+    final body = _bodyController.text.trim();
+
+    if (title.isEmpty || body.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Title and body can\'t be empty')));
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final postProvider = context.read<PostProvider>();
+    final libraryProvider = context.read<LibraryProvider>();
+
+    final newPost = await postProvider.createPost(title: title, body: body);
+
+    if (newPost == null) {
+      setState(() => _isSubmitting = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(postProvider.errorMessage ?? 'Could not create post.')),
+        );
+      }
+      return;
+    }
+
+    // Pair the local media to the post that was just created, keyed by
+    // the SAME id JSONPlaceholder handed back — not a fresh timestamp id
+    // like Draft.create() would generate, since this isn't an unsent
+    // draft, it's metadata riding alongside a post that already exists.
+    if (_pickedImage != null || _pickedAttachment != null) {
+      await libraryProvider.saveDraft(Draft(
+        id: newPost.id.toString(),
+        title: title,
+        body: body,
+        imagePath: _pickedImage?.path,
+        attachmentPath: _pickedAttachment?.path,
+        attachmentName: _pickedAttachment?.name,
+        createdAt: DateTime.now(),
+      ));
+    }
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    // Pop back to Feed rather than pushNamed — CreatePostScreen was
+    // pushed ON TOP of Feed (via the FAB), and PostProvider.createPost()
+    // already inserted newPost at index 0 of the SAME _posts list Feed
+    // is watching. Popping back just reveals it, already at the top —
+    // no separate "refresh" or argument-passing needed.
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create Post')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('TITLE', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(hintText: 'What\'s this post about?'),
+            ),
+
+            const SizedBox(height: 20),
+            Text('BODY', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _bodyController,
+              maxLines: 5,
+              decoration: const InputDecoration(hintText: 'Write something...'),
+            ),
+
+            const SizedBox(height: 24),
+            Text('PHOTO (optional)', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+            const SizedBox(height: 8),
+            _pickedImageBytes == null
+                ? OutlinedButton.icon(
+                    onPressed: _pickImage,
+                    icon: const Icon(Icons.image_outlined),
+                    label: const Text('Add Photo'),
+                  )
+                : Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.memory(
+                          _pickedImageBytes!,
+                          height: 160,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: _RemoveButton(onTap: _removeImage),
+                      ),
+                    ],
+                  ),
+
+            const SizedBox(height: 24),
+            Text('ATTACHMENT (optional)', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+            const SizedBox(height: 8),
+            _pickedAttachment == null
+                ? OutlinedButton.icon(
+                    onPressed: _pickAttachment,
+                    icon: const Icon(Icons.attach_file),
+                    label: const Text('Attach File'),
+                  )
+                : Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.insert_drive_file_outlined, color: AppTheme.primary, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _pickedAttachment!.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.bodyMedium,
+                          ),
+                        ),
+                        _RemoveButton(onTap: _removeAttachment),
+                      ],
+                    ),
+                  ),
+
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSubmitting ? null : _submit,
+                child: _isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('POST'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RemoveButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RemoveButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+        child: const Icon(Icons.close, color: Colors.white, size: 16),
+      ),
+    );
+  }
+}
