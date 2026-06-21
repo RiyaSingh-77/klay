@@ -32,6 +32,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   PlatformFile? _pickedAttachment;
 
   bool _isSubmitting = false;
+  bool _isPickingAttachment = false;
 
   @override
   void dispose() {
@@ -62,15 +63,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
-  // withData: true forces file_picker to populate PlatformFile.bytes on
-  // every platform, not just web (where it's automatic). We don't use the
-  // bytes for anything yet — name + size are enough to show a chip — but
-  // requesting them now means this is ready if a "preview attachment"
-  // feature gets added later, without changing this call site.
+  // withData defaults to false here on purpose — earlier this forced
+  // withData: true, which makes file_picker read the ENTIRE file's bytes
+  // into memory before returning, even though we only ever display the
+  // filename. For a large PDF that read is slow and gives zero visual
+  // feedback while it runs, which looks exactly like the screen has
+  // frozen. We don't use the bytes for anything yet, so we don't ask for
+  // them — if a "preview attachment" feature gets added later, request
+  // bytes there, scoped to just that feature.
   Future<void> _pickAttachment() async {
-    final result = await FilePicker.platform.pickFiles(withData: true);
-    if (result == null || result.files.isEmpty) return;
-    setState(() => _pickedAttachment = result.files.first);
+    setState(() => _isPickingAttachment = true);
+    try {
+      final result = await FilePicker.platform.pickFiles();
+      if (result != null && result.files.isNotEmpty) {
+        setState(() => _pickedAttachment = result.files.first);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not attach file: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingAttachment = false);
+    }
   }
 
   void _removeAttachment() {
@@ -171,11 +186,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(14),
-                        child: Image.memory(
-                          _pickedImageBytes!,
-                          height: 160,
+                        child: Container(
+                          height: 220,
                           width: double.infinity,
-                          fit: BoxFit.cover,
+                          color: AppTheme.surface,
+                          child: Image.memory(
+                            _pickedImageBytes!,
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                       Positioned(
@@ -191,9 +209,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             const SizedBox(height: 8),
             _pickedAttachment == null
                 ? OutlinedButton.icon(
-                    onPressed: _pickAttachment,
-                    icon: const Icon(Icons.attach_file),
-                    label: const Text('Attach File'),
+                    onPressed: _isPickingAttachment ? null : _pickAttachment,
+                    icon: _isPickingAttachment
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.attach_file),
+                    label: Text(_isPickingAttachment ? 'Attaching...' : 'Attach File'),
                   )
                 : Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

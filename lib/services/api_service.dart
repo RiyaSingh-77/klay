@@ -19,10 +19,17 @@ import '../models/comment.dart';
 //testable, and easy to maintain.
 class ApiService {
   static const String _baseUrl = 'https://jsonplaceholder.typicode.com';
+  // No call in this file is allowed to wait forever. Without a timeout,
+  // a stalled connection (flaky Wi-Fi, VPN hiccup, campus network drop —
+  // the same kind of issue that broke `flutter pub get` earlier) leaves
+  // http.get/post awaiting a response that may never arrive, which from
+  // the UI's side looks exactly like a frozen loading spinner with no
+  // error and no way to recover except restarting the app.
+  static const Duration _timeout = Duration(seconds: 12);
 
   // ── Posts (Browse + Detail) ──────────────────────────────────
   Future<List<Post>> fetchPosts() async {
-    final response = await http.get(Uri.parse('$_baseUrl/posts'));
+    final response = await http.get(Uri.parse('$_baseUrl/posts')).timeout(_timeout);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);//JSON String -> Dart List of dynamic objects (Map<String, dynamic>)
       return data.map((item) => Post.fromJson(item)).toList();//Dart List of dynamic objects -> Dart List of Post objects
@@ -31,7 +38,7 @@ class ApiService {
   }
 
   Future<Post> fetchPost(int id) async {
-    final response = await http.get(Uri.parse('$_baseUrl/posts/$id'));
+    final response = await http.get(Uri.parse('$_baseUrl/posts/$id')).timeout(_timeout);
     if (response.statusCode == 200) {
       return Post.fromJson(jsonDecode(response.body));
     }
@@ -39,7 +46,7 @@ class ApiService {
   }
 
   Future<List<Comment>> fetchComments(int postId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/posts/$postId/comments'));
+    final response = await http.get(Uri.parse('$_baseUrl/posts/$postId/comments')).timeout(_timeout);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((item) => Comment.fromJson(item)).toList();
@@ -49,7 +56,7 @@ class ApiService {
 
   // ── Author (Explore Author) ──────────────────────────────────
   Future<User> fetchUser(int userId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/users/$userId'));
+    final response = await http.get(Uri.parse('$_baseUrl/users/$userId')).timeout(_timeout);
     if (response.statusCode == 200) {
       return User.fromJson(jsonDecode(response.body));
     }
@@ -64,7 +71,7 @@ class ApiService {
   // an id -> User lookup map client-side, so every card after that is a
   // free in-memory read instead of a network call.
   Future<List<User>> fetchUsers() async {
-    final response = await http.get(Uri.parse('$_baseUrl/users'));
+    final response = await http.get(Uri.parse('$_baseUrl/users')).timeout(_timeout);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((item) => User.fromJson(item)).toList();
@@ -77,7 +84,7 @@ class ApiService {
   // belonging to this user" — equivalent to /albums?userId={id}, but
   // reads more clearly as a relationship in the URL itself.
   Future<List<Album>> fetchAlbumsByUser(int userId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/users/$userId/albums'));
+    final response = await http.get(Uri.parse('$_baseUrl/users/$userId/albums')).timeout(_timeout);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((item) => Album.fromJson(item)).toList();
@@ -86,7 +93,7 @@ class ApiService {
   }
 
   Future<List<Photo>> fetchPhotosByAlbum(int albumId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/albums/$albumId/photos'));
+    final response = await http.get(Uri.parse('$_baseUrl/albums/$albumId/photos')).timeout(_timeout);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((item) => Photo.fromJson(item)).toList();
@@ -113,7 +120,7 @@ class ApiService {
       Uri.parse('$_baseUrl/posts'),
       headers: {'Content-Type': 'application/json; charset=UTF-8'},
       body: jsonEncode({'title': title, 'body': body, 'userId': userId}),
-    );
+    ).timeout(_timeout);
     if (response.statusCode == 201) {
       return Post.fromJson(jsonDecode(response.body));
     }
