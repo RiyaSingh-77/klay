@@ -8,6 +8,7 @@ import '../../models/draft.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/file_opener.dart';
 
 // CreatePostScreen sends title + body to JSONPlaceholder via
 // PostProvider.createPost(), but the picked image and file attachment
@@ -31,6 +32,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Uint8List? _pickedImageBytes; // read once at pick-time for the live preview
 
   PlatformFile? _pickedAttachment;
+
+  // Web-only: a blob: URL built from the attachment's bytes right after
+  // picking. This is what actually makes the PDF openable later — on web
+  // there is no real filesystem path to fall back on (PlatformFile.path
+  // throws there), so this URL becomes the attachmentPath we save on the
+  // Draft instead. On mobile this stays null and is simply unused, since
+  // mobile already has a real PlatformFile.path to save.
+  String? _pickedAttachmentWebUrl;
 
   bool _isSubmitting = false;
   bool _isPickingAttachment = false;
@@ -64,34 +73,63 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
-  // withData defaults to false here on purpose — earlier this forced
-  // withData: true, which makes file_picker read the ENTIRE file's bytes
-  // into memory before returning, even though we only ever display the
-  // filename. For a large PDF that read is slow and gives zero visual
-  // feedback while it runs, which looks exactly like the screen has
-  // frozen. We don't use the bytes for anything yet, so we don't ask for
-  // them — if a "preview attachment" feature gets added later, request
-  // bytes there, scoped to just that feature.
-  // FilePicker.pickFiles() has known, reported issues on Flutter Web
-  // where it hangs specifically for certain MIME types (PDF being a
-  // common one) on some Chrome versions — this is a third-party plugin
-  // behavior, not something fixable from inside this app. The
-  // responsible move is the same one we used for ApiService: never let
-  // a call sit unbounded. .timeout() here guarantees the UI recovers
-  // with a clear message instead of spinning forever, regardless of
-  // what's happening inside the plugin.
+  // Small, deliberately limited extension -> MIME map. We only need this
+  // to label the blob we hand to the browser; an unknown/missing
+  // extension still works fine since browsers fall back gracefully on a
+  // generic octet-stream — it just won't render with quite as much
+  // native chrome (no PDF icon, etc.) in some browsers.
+  String _mimeTypeFor(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'txt':
+        return 'text/plain';
+      case 'zip':
+        return 'application/zip';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  // withData is now conditional on kIsWeb — this is the one deliberate
+  // change to the original reasoning here. Previously withData stayed
+  // false everywhere, because file_picker reading the WHOLE file into
+  // memory just to show a filename was wasted, UI-freezing work. That
+  // reasoning still holds for mobile, where we have a real
+  // PlatformFile.path and never need the bytes. But on web there IS no
+  // usable path (PlatformFile.path throws there), and bytes are now the
+  // only way to make the PDF openable at all — so on web we accept the
+  // cost and request them.
   Future<void> _pickAttachment() async {
     setState(() => _isPickingAttachment = true);
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['pdf', 'doc', 'docx', 'txt', 'zip', 'jpg', 'png'],
+        withData: kIsWeb,
       ).timeout(
         const Duration(seconds: 15),
         onTimeout: () => throw Exception('Attachment picker timed out — try a different file.'),
       );
       if (result != null && result.files.isNotEmpty) {
-        setState(() => _pickedAttachment = result.files.first);
+        final file = result.files.first;
+        String? webUrl;
+        if (kIsWeb && file.bytes != null) {
+          webUrl = createBlobUrl(file.bytes!, _mimeTypeFor(file.extension));
+        }
+        setState(() {
+          _pickedAttachment = file;
+          _pickedAttachmentWebUrl = webUrl;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -104,7 +142,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   void _removeAttachment() {
-    setState(() => _pickedAttachment = null);
+    setState(() {
+      _pickedAttachment = null;
+      _pickedAttachmentWebUrl = null;
+    });
   }
 
   Future<void> _submit() async {
@@ -151,17 +192,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           title: title,
           body: body,
           imagePath: _pickedImage?.path,
-          // PlatformFile.path is a known trap on Flutter Web — unlike most
-          // nullable getters, it doesn't quietly return null when there's
-          // no real filesystem path to give you, it THROWS instead (see
-          // https://github.com/miguelpruivo/flutter_file_picker/wiki/FAQ).
-          // That exception was firing inside saveDraft() and killing this
-          // function before _isSubmitting ever got reset — the real cause
-          // of the stuck spinner. kIsWeb guards it: on web we just never
-          // touch .path at all, since we don't use it for anything beyond
-          // the (web-only) image preview, which already goes through
-          // bytes instead, never path.
-          attachmentPath: kIsWeb ? null : _pickedAttachment?.path,
+          // On web, attachmentPath is now the blob: URL we built right
+          // after picking — that's what makes the chip openable later.
+          // On mobile, it's still the real PlatformFile.path, exactly as
+          // before; PlatformFile.path only throws on web, so it's safe
+          // to read directly here once kIsWeb is false.
+          attachmentPath: kIsWeb ? _pickedAttachmentWebUrl : _pickedAttachment?.path,
           attachmentName: _pickedAttachment?.name,
           createdAt: DateTime.now(),
         ));

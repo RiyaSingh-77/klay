@@ -1,11 +1,14 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/draft.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/file_opener.dart';
 import '../../widgets/post_detail_author_row.dart';
 
 // PostDetailScreen receives a postId via Navigator arguments (see
@@ -30,6 +33,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _load() async {
     await context.read<PostProvider>().fetchPostDetail(widget.postId);
+  }
+
+  // attachmentPath now holds different things depending on platform:
+  // - on web, it's a blob: URL (built in CreatePostScreen at pick-time),
+  //   so we just open it directly the way a normal link would open.
+  // - on mobile, it's a real filesystem path, so we hand it to
+  //   url_launcher as a file:// URI and let the OS pick a viewer app —
+  //   the same way tapping a downloaded PDF in any app would.
+  // Either way, this method is the single place that knows the
+  // difference; nothing else in the widget tree needs to care.
+  Future<void> _openAttachment(String? attachmentPath, String? attachmentName) async {
+    if (attachmentPath == null || attachmentPath.isEmpty) return;
+
+    if (kIsWeb) {
+      openWebUrl(attachmentPath, attachmentName);
+      return;
+    }
+
+    final uri = Uri.file(attachmentPath);
+    final opened = await canLaunchUrl(uri) && await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No app found to open this file.')),
+      );
+    }
   }
 
   @override
@@ -64,9 +92,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // never sent to JSONPlaceholder — it has no field for either —
           // so they were saved locally as a Draft keyed by this same
           // post's id. We look that draft up here purely to grab its
-          // imagePath / attachmentName; we don't care about title/body
-          // on the draft itself, the Post already has those as the
-          // source of truth.
+          // imagePath / attachmentPath / attachmentName; we don't care
+          // about title/body on the draft itself, the Post already has
+          // those as the source of truth.
           final matchingDraft = context.watch<LibraryProvider>().drafts.firstWhere(
                 (d) => d.id == post.id.toString(),
                 orElse: () => Draft(
@@ -77,6 +105,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               );
           final imagePath = matchingDraft.imagePath;
+          final attachmentPath = matchingDraft.attachmentPath;
           final attachmentName = matchingDraft.attachmentName;
 
           // userProvider.authorName() reads the same id -> name cache
@@ -115,31 +144,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   const SizedBox(height: 20),
                 ],
                 // Attachment chip — same visual pattern CreatePostScreen
-                // uses for _pickedAttachment. We only ever have the name
-                // to show: on web, CreatePostScreen deliberately never
-                // saves attachmentPath (PlatformFile.path throws on web,
-                // see the comment there), so there's no file to open or
-                // preview here, just the filename as a record that
-                // something was attached.
+                // uses for _pickedAttachment, now wrapped in InkWell so
+                // tapping it actually opens the file via _openAttachment.
                 if (attachmentName != null && attachmentName.isNotEmpty) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surface,
+                  Material(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.insert_drive_file_outlined, color: AppTheme.primary, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            attachmentName,
-                            overflow: TextOverflow.ellipsis,
-                            style: textTheme.bodyMedium,
-                          ),
+                      onTap: () => _openAttachment(attachmentPath, attachmentName),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.insert_drive_file_outlined, color: AppTheme.primary, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                attachmentName,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.bodyMedium,
+                              ),
+                            ),
+                            const Icon(Icons.open_in_new, color: Colors.black38, size: 18),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
