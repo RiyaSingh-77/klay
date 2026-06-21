@@ -6,6 +6,7 @@ import '../screens/feed/feed_screen.dart';
 import '../screens/post_detail/post_detail_screen.dart';
 import '../screens/author/author_profile_screen.dart';
 import '../screens/albums/album_photos_screen.dart';
+import '../screens/create_post/create_post_screen.dart';
 
 // route_generator.dart is the ONE place in the app that knows how to turn
 // a route name (a String) into an actual screen widget. MaterialApp calls
@@ -54,7 +55,7 @@ class RouteGenerator {
         return _page(AlbumPhotosScreen(albumId: albumId));
 
       case AppRoutes.createPost:
-        return _page(const _PlaceholderScreen(title: 'Create Post')); // Phase 9
+        return _page(const CreatePostScreen());
 
       case AppRoutes.library:
         return _page(const _PlaceholderScreen(title: 'Library')); // Phase 10
