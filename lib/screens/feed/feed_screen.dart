@@ -45,6 +45,11 @@ class _FeedScreenState extends State<FeedScreen> {
         title: const Text('Klay'),
         centerTitle: false,
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.pushNamed(context, AppRoutes.createPost),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
       body: Consumer2<PostProvider, UserProvider>(
         builder: (context, postProvider, userProvider, _) {
           if (postProvider.isLoading && postProvider.posts.isEmpty) {
