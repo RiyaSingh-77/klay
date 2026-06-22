@@ -12,6 +12,24 @@ class AppTheme {
   static const Color surface = Color(0xFFFFFFFF);
   static const Color textDark = Color(0xFF2B2420);
 
+  // Generic Material grays (Colors.black54, black45, black38, black26)
+  // were scattered across widgets/screens for secondary text and faint
+  // icons. Those are neutral grays with a cool/blue undertone, which
+  // visibly clashes against the warm cream background and terracotta
+  // accent everywhere else in the app — most noticeable on long screens
+  // like Author Profile or Library where a lot of muted text is visible
+  // at once. textMuted/textFaint replace them with warm-toned grays
+  // derived from textDark, so secondary content recedes without fighting
+  // the rest of the palette.
+  static const Color textMuted = Color(0xFF8A7E73);  // secondary text (was black54/black45)
+  static const Color textFaint = Color(0xFFC2B7AB);  // disabled/faint icons (was black38/black26/black12)
+
+  // A dedicated delete/destructive color instead of stock Colors.red —
+  // same purpose (clearly reads as "destructive"), but warmed slightly
+  // toward the terracotta family so it reads as part of this app's
+  // palette rather than a generic Material red dropped in unchanged.
+  static const Color error = Color(0xFFC44536);
+
   static ThemeData get lightTheme {
     // Three-tier type system, Poppins for headings (bold, distinctive), Inter for body
     // text (highly readable at small sizes), Roboto for buttons (neutral,
@@ -32,9 +50,6 @@ class AppTheme {
         surface: surface,
       ),
 
-      // GoogleFonts.xTextTheme() takes Flutter's default TextTheme and
-      // swaps every style's fontFamily — this is what makes Text widgets
-      // across the WHOLE app use the new fonts without touching each one.
       textTheme: GoogleFonts.interTextTheme().copyWith(
         headlineLarge: headingStyle.copyWith(fontSize: 32),
         headlineMedium: headingStyle.copyWith(fontSize: 24),
@@ -70,6 +85,23 @@ class AppTheme {
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: primary,
+          side: const BorderSide(color: primary),
+          minimumSize: const Size(double.infinity, 52),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: buttonStyle.copyWith(fontSize: 15),
+        ),
+      ),
+
+      tabBarTheme: TabBarThemeData(
+        labelColor: primary,
+        unselectedLabelColor: textMuted,
+        indicatorColor: primary,
+        labelStyle: buttonStyle.copyWith(fontSize: 13, letterSpacing: 0.5),
       ),
 
       cardTheme: CardThemeData(

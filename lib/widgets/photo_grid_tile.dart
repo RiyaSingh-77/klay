@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/photo.dart';
+import '../theme/app_theme.dart';
 
-// PhotoGridTile: one square thumbnail in AlbumPhotosScreen's grid.
-// Image.network needs its own loading + error handling per-image (unlike
-// a single full-screen fetch, a GridView of 50 photos will have several
-// in different load states at once) — loadingBuilder and errorBuilder
-// cover that per-tile, independently of every other tile around it.
 class PhotoGridTile extends StatelessWidget {
   final Photo photo;
   final VoidCallback onTap;
@@ -36,8 +32,8 @@ class PhotoGridTile extends StatelessWidget {
             );
           },
           errorBuilder: (context, error, stackTrace) => Container(
-            color: Colors.black12,
-            child: const Icon(Icons.broken_image_outlined, color: Colors.black38),
+            color: AppTheme.textFaint.withValues(alpha: 0.3),
+            child: const Icon(Icons.broken_image_outlined, color: AppTheme.textFaint),
           ),
         ),
       ),
