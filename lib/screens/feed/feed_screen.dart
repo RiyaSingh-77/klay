@@ -23,6 +23,15 @@ class _FeedScreenState extends State<FeedScreen> {
     final postProvider = context.read<PostProvider>();
     final userProvider = context.read<UserProvider>();
 
+    // startWatchingMediaPosts() is NOT part of the Future.wait below on
+    // purpose — it returns void, not a Future, since it just opens a
+    // long-lived Firestore stream subscription rather than doing a
+    // one-time fetch. Calling it here (inside _loadFeed, which itself
+    // only runs once via addPostFrameCallback in initState) means it
+    // starts exactly once per FeedScreen instance, same lifecycle as
+    // the JSONPlaceholder fetch beside it.
+    postProvider.startWatchingMediaPosts();
+
     await Future.wait([
       postProvider.fetchPosts(),
       userProvider.fetchAllUsers(),

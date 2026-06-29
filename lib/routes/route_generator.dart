@@ -8,6 +8,7 @@ import '../screens/author/author_profile_screen.dart';
 import '../screens/albums/album_photos_screen.dart';
 import '../screens/create_post/create_post_screen.dart';
 import '../screens/library/library_screen.dart';
+import '../screens/camera/camera_capture_screen.dart';
 
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -47,6 +48,13 @@ class RouteGenerator {
 
       case AppRoutes.library:
         return _page(const LibraryScreen());
+
+      case AppRoutes.cameraCapture:
+        final captureMode = settings.arguments as String?;
+        if (captureMode == null) {
+          return _page(const _PlaceholderScreen(title: 'Camera — missing captureMode'));
+        }
+        return _page(CameraCaptureScreen(captureMode: captureMode));
 
       default:
         return _page(_PlaceholderScreen(title: 'Route not found: ${settings.name}'));

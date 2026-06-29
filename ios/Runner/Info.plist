@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Klay needs camera access so you can take photos and record videos to share.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Klay needs microphone access to record audio in your videos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Klay needs photo library access so you can pick images and videos to share.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Klay needs permission to save media to your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

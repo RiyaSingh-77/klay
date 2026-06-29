@@ -1,4 +1,27 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Network access — required for Cloudinary uploads and Firestore reads/writes -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Camera + microphone — required for camera_capture_screen.dart (photo + video) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Android 13+ (API 33+) granular media permissions — required for gallery image/video/audio picking -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- Legacy storage permission for Android 12 (API 32) and below — ignored on Android 13+ -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Declares camera as used but NOT strictly required, so the app still
+         installs on emulators/devices with no camera hardware -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <application
         android:label="klay"
         android:name="${applicationName}"

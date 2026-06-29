@@ -31,16 +31,27 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.1.2          # state management — same pattern as your last two projects
-  http: ^1.2.2               # talks to JSONPlaceholder
+  http: ^1.2.2               # talks to JSONPlaceholder AND Cloudinary's unsigned upload endpoint
   google_fonts: ^6.2.1       # typography system (Poppins/Inter/Roboto like your inspo)
   image_picker: ^1.1.2       # pick a profile image / post image from gallery or camera
-  file_picker: ^8.1.2        # attach a non-image file (PDF, doc) to a post
+  file_picker: ^8.1.2        # attach a non-image file (PDF, doc) to a post, and pick audio files
   shared_preferences: ^2.3.2 # persists favorites + drafts locally, survives app restart
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   url_launcher: ^6.3.2
+  camera: ^0.12.0+1          # take photo / record video using device camera
+
+  # ── Media Module additions ──────────────────────────────────────
+  permission_handler: ^11.3.1       # camera, microphone, storage runtime permissions
+  video_player: ^2.9.2              # play uploaded videos in feed + preview
+  just_audio: ^0.9.40                # play uploaded audio in feed + preview
+  cached_network_image: ^3.4.1      # cache Cloudinary image URLs in the feed
+
+  # ── Firebase (Firestore for metadata only — media lives on Cloudinary) ─
+  firebase_core: ^3.8.0
+  cloud_firestore: ^5.5.0
 
 dev_dependencies:
   flutter_test:

@@ -17,4 +17,5 @@ class AppRoutes {
   static const String albumPhotos = '/album-photos';
   static const String createPost = '/create-post';
   static const String library = '/library'; // favorites + drafts
+  static const String cameraCapture = '/camera-capture'; // Media Module addition
 }

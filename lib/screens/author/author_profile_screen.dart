@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../providers/album_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../routes/app_routes.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/album_grid_title.dart';
 import '../../widgets/author_header.dart';
 

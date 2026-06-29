@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/draft.dart';
 import '../models/post.dart';
 import '../providers/library_provider.dart';
 import '../theme/app_theme.dart';
+import 'video_player_widget.dart';
+import 'audio_player_widget.dart';
 
 class FeedPostCard extends StatelessWidget {
   final Post post;
@@ -70,7 +73,7 @@ class FeedPostCard extends StatelessWidget {
       ),
     );
 
-    final imagePath = matchingDraft.imagePath;
+    final draftImagePath = matchingDraft.imagePath;
     final isFavorite =
         libraryProvider.isFavorite(post.id);
 
@@ -122,8 +125,8 @@ class FeedPostCard extends StatelessWidget {
                   ),
                   GestureDetector(
                     onTap: () => context
-                        .read<
-                            LibraryProvider>()
+                        .read
+                            <LibraryProvider>()
                         .toggleFavorite(
                             post.id),
                     child: Icon(
@@ -139,60 +142,13 @@ class FeedPostCard extends StatelessWidget {
               ),
             ),
 
-            AspectRatio(
-              aspectRatio: 1,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (imagePath != null &&
-                      imagePath.isNotEmpty)
-                    Image.network(
-                      imagePath,
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (_, __, ___) =>
-                              _GradientHero(
-                        colors: _gradient,
-                      ),
-                    )
-                  else
-                    _GradientHero(
-                      colors: _gradient,
-                    ),
-
-                  Positioned(
-                    top: 14,
-                    right: 14,
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration:
-                          BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius:
-                            BorderRadius.circular(
-                                20),
-                      ),
-                      child: Text(
-                        _category,
-                        style:
-                            const TextStyle(
-                          color:
-                              Colors.white,
-                          fontSize: 10,
-                          fontWeight:
-                              FontWeight.w700,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // ── Media area ──────────────────────────────────────────
+            // Branches on post.mediaType, which is ONLY ever set on
+            // Firestore-backed posts created via the new Upload Screen.
+            // JSONPlaceholder posts always have mediaType == null and
+            // fall through to the original behavior unchanged: a local
+            // Draft image if one exists, else the gradient hero.
+            _buildMediaArea(draftImagePath),
 
             Padding(
               padding:
@@ -227,6 +183,83 @@ class FeedPostCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildMediaArea(String? draftImagePath) {
+    // Audio gets its own non-square layout — a waveform-style player
+    // bar looks wrong forced into a 1:1 AspectRatio the way image/video
+    // hero areas do, so it's handled as a distinct branch entirely.
+    if (post.mediaType == 'audio' && post.mediaUrl != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: AudioPlayerWidget(audioUrl: post.mediaUrl!),
+      );
+    }
+
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildVisualMedia(draftImagePath),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _category,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVisualMedia(String? draftImagePath) {
+    if (post.mediaType == 'video' && post.mediaUrl != null) {
+      return VideoPlayerWidget(videoUrl: post.mediaUrl!);
+    }
+
+    if (post.mediaType == 'image' && post.mediaUrl != null) {
+      return CachedNetworkImage(
+        imageUrl: post.mediaUrl!,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(
+          color: AppTheme.surface,
+          child: const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        errorWidget: (_, __, ___) => _GradientHero(colors: _gradient),
+      );
+    }
+
+    // Original behavior, unchanged: a Draft-backed local image path
+    // (the old image_picker flow), else the gradient hero.
+    if (draftImagePath != null && draftImagePath.isNotEmpty) {
+      return Image.network(
+        draftImagePath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _GradientHero(colors: _gradient),
+      );
+    }
+
+    return _GradientHero(colors: _gradient);
   }
 }
 

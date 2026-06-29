@@ -7,16 +7,26 @@ import 'package:file_picker/file_picker.dart';
 import '../../models/draft.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/library_provider.dart';
+import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/file_opener.dart';
+import '../../services/media_picker_services.dart';
+import '../../services/permission_service.dart';
+import '../camera/camera_capture_screen.dart';
 
-// CreatePostScreen sends title + body to JSONPlaceholder via
-// PostProvider.createPost(), but the picked image and file attachment
-// have NO field on JSONPlaceholder's /posts resource — see the comment
-// on ApiService.createPost() for why. So after a successful create, this
-// screen saves a Draft (via LibraryProvider) using the SAME id as the new
-// server post, pairing the local media to the post it belongs to. That's
-// the app's local-persistence boundary, not a workaround.
+// CreatePostScreen now has TWO modes behind a toggle:
+//   1. "Text Post" — the ORIGINAL flow, completely unchanged: title +
+//      body go to JSONPlaceholder via PostProvider.createPost(), with an
+//      optional local image/attachment saved as a Draft (since
+//      JSONPlaceholder's mock /posts has no field for either — see the
+//      comment on ApiService.createPost()).
+//   2. "Share Media" — NEW: camera/gallery/audio picker, preview,
+//      caption, upload to Cloudinary + Firestore via
+//      PostProvider.uploadMediaPost().
+//
+// Both modes share this one screen/route (AppRoutes.createPost) rather
+// than being split into two separate screens, so the FAB on Feed doesn't
+// need to change at all.
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
 
@@ -24,38 +34,45 @@ class CreatePostScreen extends StatefulWidget {
   State<CreatePostScreen> createState() => _CreatePostScreenState();
 }
 
+enum _PostMode { text, media }
+
 class _CreatePostScreenState extends State<CreatePostScreen> {
+  _PostMode _mode = _PostMode.text;
+
+  // ── Text Post state (unchanged from original) ─────────────────────
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
 
   XFile? _pickedImage;
-  Uint8List? _pickedImageBytes; // read once at pick-time for the live preview
+  Uint8List? _pickedImageBytes;
 
   PlatformFile? _pickedAttachment;
-
-  // Web-only: a blob: URL built from the attachment's bytes right after
-  // picking. This is what actually makes the PDF openable later — on web
-  // there is no real filesystem path to fall back on (PlatformFile.path
-  // throws there), so this URL becomes the attachmentPath we save on the
-  // Draft instead. On mobile this stays null and is simply unused, since
-  // mobile already has a real PlatformFile.path to save.
   String? _pickedAttachmentWebUrl;
 
   bool _isSubmitting = false;
   bool _isPickingAttachment = false;
 
+  // ── Share Media state (new) ────────────────────────────────────────
+  final _captionController = TextEditingController();
+  final MediaPickerService _mediaPickerService = MediaPickerService();
+  final PermissionService _permissionService = PermissionService();
+
+  Uint8List? _mediaBytes;
+  String? _mediaFileName;
+  String? _mediaType; // 'image' | 'video' | 'audio'
+
   @override
   void dispose() {
     _titleController.dispose();
     _bodyController.dispose();
+    _captionController.dispose();
     super.dispose();
   }
 
-  // Reading bytes via XFile.readAsBytes() (instead of Image.file(File(...)))
-  // is what keeps this screen working identically on Flutter Web and on
-  // mobile — dart:io's File class doesn't compile on web at all, so any
-  // code path that touches it directly would need a web/io branch. Bytes
-  // sidestep that entirely.
+  // ═══════════════════════════════════════════════════════════════════
+  // TEXT POST — every method below is identical to the original file.
+  // ═══════════════════════════════════════════════════════════════════
+
   Future<void> _pickImage() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -73,11 +90,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
-  // Small, deliberately limited extension -> MIME map. We only need this
-  // to label the blob we hand to the browser; an unknown/missing
-  // extension still works fine since browsers fall back gracefully on a
-  // generic octet-stream — it just won't render with quite as much
-  // native chrome (no PDF icon, etc.) in some browsers.
   String _mimeTypeFor(String? extension) {
     switch (extension?.toLowerCase()) {
       case 'pdf':
@@ -100,15 +112,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  // withData is now conditional on kIsWeb — this is the one deliberate
-  // change to the original reasoning here. Previously withData stayed
-  // false everywhere, because file_picker reading the WHOLE file into
-  // memory just to show a filename was wasted, UI-freezing work. That
-  // reasoning still holds for mobile, where we have a real
-  // PlatformFile.path and never need the bytes. But on web there IS no
-  // usable path (PlatformFile.path throws there), and bytes are now the
-  // only way to make the PDF openable at all — so on web we accept the
-  // cost and request them.
   Future<void> _pickAttachment() async {
     setState(() => _isPickingAttachment = true);
     try {
@@ -148,7 +151,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
-  Future<void> _submit() async {
+  Future<void> _submitTextPost() async {
     final title = _titleController.text.trim();
     final body = _bodyController.text.trim();
 
@@ -163,12 +166,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final postProvider = context.read<PostProvider>();
     final libraryProvider = context.read<LibraryProvider>();
 
-    // Everything from here down is wrapped in try/finally on purpose.
-    // Previously, if saveDraft() (or anything after createPost succeeded)
-    // threw for any reason, the function would exit without ever
-    // reaching the setState that turns _isSubmitting back to false —
-    // leaving the POST button spinning forever with no way to recover
-    // short of a hot restart. finally guarantees that reset always runs.
     try {
       final newPost = await postProvider.createPost(title: title, body: body);
 
@@ -181,22 +178,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         return;
       }
 
-      // Pair the local media to the post that was just created, keyed by
-      // the SAME id JSONPlaceholder handed back — not a fresh timestamp
-      // id like Draft.create() would generate, since this isn't an
-      // unsent draft, it's metadata riding alongside a post that
-      // already exists.
       if (_pickedImage != null || _pickedAttachment != null) {
         await libraryProvider.saveDraft(Draft(
           id: newPost.id.toString(),
           title: title,
           body: body,
           imagePath: _pickedImage?.path,
-          // On web, attachmentPath is now the blob: URL we built right
-          // after picking — that's what makes the chip openable later.
-          // On mobile, it's still the real PlatformFile.path, exactly as
-          // before; PlatformFile.path only throws on web, so it's safe
-          // to read directly here once kIsWeb is false.
           attachmentPath: kIsWeb ? _pickedAttachmentWebUrl : _pickedAttachment?.path,
           attachmentName: _pickedAttachment?.name,
           createdAt: DateTime.now(),
@@ -204,12 +191,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
 
       if (!mounted) return;
-
-      // Pop back to Feed rather than pushNamed — CreatePostScreen was
-      // pushed ON TOP of Feed (via the FAB), and PostProvider.createPost()
-      // already inserted newPost at index 0 of the SAME _posts list Feed
-      // is watching. Popping back just reveals it, already at the top —
-      // no separate "refresh" or argument-passing needed.
       Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -221,116 +202,411 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // SHARE MEDIA — new flow.
+  // ═══════════════════════════════════════════════════════════════════
+
+  Future<void> _pickGalleryImage() async {
+    final granted = await _permissionService.requestGalleryAccess(context);
+    if (!granted) return;
+    final file = await _mediaPickerService.pickGalleryImage();
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    setState(() {
+      _mediaBytes = bytes;
+      _mediaFileName = file.name;
+      _mediaType = 'image';
+    });
+  }
+
+  Future<void> _pickGalleryVideo() async {
+    final granted = await _permissionService.requestGalleryAccess(context);
+    if (!granted) return;
+    final file = await _mediaPickerService.pickGalleryVideo();
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    setState(() {
+      _mediaBytes = bytes;
+      _mediaFileName = file.name;
+      _mediaType = 'video';
+    });
+  }
+
+  Future<void> _pickAudio() async {
+    final granted = await _permissionService.requestStorageAccess(context);
+    if (!granted) return;
+    final file = await _mediaPickerService.pickAudioFile();
+    if (file == null || file.bytes == null) return;
+    setState(() {
+      _mediaBytes = file.bytes;
+      _mediaFileName = file.name;
+      _mediaType = 'audio';
+    });
+  }
+
+  Future<void> _openCamera(String captureMode) async {
+    final result = await Navigator.pushNamed(
+      context,
+      AppRoutes.cameraCapture,
+      arguments: captureMode,
+    ) as CapturedMedia?;
+    if (result == null) return;
+    setState(() {
+      _mediaBytes = result.bytes;
+      _mediaFileName = result.fileName;
+      _mediaType = result.mediaType;
+    });
+  }
+
+  void _removeMedia() {
+    setState(() {
+      _mediaBytes = null;
+      _mediaFileName = null;
+      _mediaType = null;
+    });
+  }
+
+  Future<void> _submitMediaPost() async {
+    if (_mediaBytes == null || _mediaType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a photo, video, or audio file first.')),
+      );
+      return;
+    }
+
+    final postProvider = context.read<PostProvider>();
+    final success = await postProvider.uploadMediaPost(
+      bytes: _mediaBytes!,
+      fileName: _mediaFileName ?? 'upload',
+      mediaType: _mediaType!,
+      caption: _captionController.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(postProvider.uploadErrorMessage ?? 'Upload failed.')),
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // BUILD
+  // ═══════════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Create Post')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
+        children: [
+          _buildModeToggle(),
+          Expanded(
+            child: _mode == _PostMode.text ? _buildTextPostForm() : _buildMediaPostForm(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeToggle() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        padding: const EdgeInsets.all(4),
+        child: Row(
           children: [
-            Text('TITLE', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(hintText: 'What\'s this post about?'),
-            ),
+            Expanded(child: _ToggleTab(
+              label: 'Text Post',
+              selected: _mode == _PostMode.text,
+              onTap: () => setState(() => _mode = _PostMode.text),
+            )),
+            Expanded(child: _ToggleTab(
+              label: 'Share Media',
+              selected: _mode == _PostMode.media,
+              onTap: () => setState(() => _mode = _PostMode.media),
+            )),
+          ],
+        ),
+      ),
+    );
+  }
 
-            const SizedBox(height: 20),
-            Text('BODY', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _bodyController,
-              maxLines: 5,
-              decoration: const InputDecoration(hintText: 'Write something...'),
-            ),
+  Widget _buildTextPostForm() {
+    final textTheme = Theme.of(context).textTheme;
 
-            const SizedBox(height: 24),
-            Text('PHOTO (optional)', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
-            const SizedBox(height: 8),
-            _pickedImageBytes == null
-                ? OutlinedButton.icon(
-                    onPressed: _pickImage,
-                    icon: const Icon(Icons.image_outlined),
-                    label: const Text('Add Photo'),
-                  )
-                : Stack(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('TITLE', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(hintText: 'What\'s this post about?'),
+          ),
+
+          const SizedBox(height: 20),
+          Text('BODY', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _bodyController,
+            maxLines: 5,
+            decoration: const InputDecoration(hintText: 'Write something...'),
+          ),
+
+          const SizedBox(height: 24),
+          Text('PHOTO (optional)', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+          const SizedBox(height: 8),
+          _pickedImageBytes == null
+              ? OutlinedButton.icon(
+                  onPressed: _pickImage,
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('Add Photo'),
+                )
+              : Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        height: 220,
+                        width: double.infinity,
+                        color: AppTheme.surface,
+                        child: Image.memory(_pickedImageBytes!, fit: BoxFit.contain),
+                      ),
+                    ),
+                    Positioned(top: 8, right: 8, child: _RemoveButton(onTap: _removeImage)),
+                  ],
+                ),
+
+          const SizedBox(height: 24),
+          Text('ATTACHMENT (optional)', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+          const SizedBox(height: 8),
+          _pickedAttachment == null
+              ? OutlinedButton.icon(
+                  onPressed: _isPickingAttachment ? null : _pickAttachment,
+                  icon: _isPickingAttachment
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.attach_file),
+                  label: Text(_isPickingAttachment ? 'Attaching...' : 'Attach File'),
+                )
+              : Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          height: 220,
-                          width: double.infinity,
-                          color: AppTheme.surface,
-                          child: Image.memory(
-                            _pickedImageBytes!,
-                            fit: BoxFit.contain,
-                          ),
+                      const Icon(Icons.insert_drive_file_outlined, color: AppTheme.primary, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _pickedAttachment!.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.bodyMedium,
                         ),
                       ),
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: _RemoveButton(onTap: _removeImage),
-                      ),
+                      _RemoveButton(onTap: _removeAttachment),
                     ],
                   ),
+                ),
 
-            const SizedBox(height: 24),
-            Text('ATTACHMENT (optional)', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
-            const SizedBox(height: 8),
-            _pickedAttachment == null
-                ? OutlinedButton.icon(
-                    onPressed: _isPickingAttachment ? null : _pickAttachment,
-                    icon: _isPickingAttachment
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.attach_file),
-                    label: Text(_isPickingAttachment ? 'Attaching...' : 'Attach File'),
-                  )
-                : Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.insert_drive_file_outlined, color: AppTheme.primary, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _pickedAttachment!.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: textTheme.bodyMedium,
-                          ),
-                        ),
-                        _RemoveButton(onTap: _removeAttachment),
-                      ],
-                    ),
-                  ),
-
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submit,
-                child: _isSubmitting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('POST'),
-              ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isSubmitting ? null : _submitTextPost,
+              child: _isSubmitting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('POST'),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaPostForm() {
+    final textTheme = Theme.of(context).textTheme;
+    final postProvider = context.watch<PostProvider>();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ADD MEDIA', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _openCamera('photo'),
+                icon: const Icon(Icons.camera_alt_outlined),
+                label: const Text('Take Photo'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _openCamera('video'),
+                icon: const Icon(Icons.videocam_outlined),
+                label: const Text('Record Video'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _pickGalleryImage,
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Gallery Image'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _pickGalleryVideo,
+                icon: const Icon(Icons.video_library_outlined),
+                label: const Text('Gallery Video'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _pickAudio,
+                icon: const Icon(Icons.audiotrack_outlined),
+                label: const Text('Pick Audio'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          if (_mediaBytes != null) ...[
+            Text('PREVIEW', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+            const SizedBox(height: 8),
+            _buildMediaPreview(),
+            const SizedBox(height: 24),
           ],
+
+          Text('CAPTION', style: textTheme.bodyMedium?.copyWith(letterSpacing: 1, fontSize: 12)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _captionController,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Write a caption...'),
+          ),
+
+          const SizedBox(height: 24),
+
+          if (postProvider.isUploadingMedia) ...[
+            LinearProgressIndicator(value: postProvider.uploadProgress),
+            const SizedBox(height: 8),
+            Text(
+              'Uploading... ${(postProvider.uploadProgress * 100).toInt()}%',
+              style: textTheme.bodyMedium?.copyWith(color: AppTheme.textMuted),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: postProvider.isUploadingMedia ? null : _submitMediaPost,
+              child: postProvider.isUploadingMedia
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('UPLOAD'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaPreview() {
+    if (_mediaType == 'image') {
+      return Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              height: 220,
+              width: double.infinity,
+              color: AppTheme.surface,
+              child: Image.memory(_mediaBytes!, fit: BoxFit.contain),
+            ),
+          ),
+          Positioned(top: 8, right: 8, child: _RemoveButton(onTap: _removeMedia)),
+        ],
+      );
+    }
+
+    // Video and audio share the same "filename card" preview — playing
+    // either back locally before upload would mean a temp-file round
+    // trip on every platform including web, for a file that's about to
+    // be uploaded anyway. Full playback is already available once the
+    // post lands in the Feed (VideoPlayerWidget/AudioPlayerWidget).
+    final icon = _mediaType == 'video' ? Icons.videocam : Icons.audiotrack;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppTheme.primary, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _mediaFileName ?? 'Selected file',
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          _RemoveButton(onTap: _removeMedia),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ToggleTab({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : AppTheme.textMuted,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
         ),
       ),
     );

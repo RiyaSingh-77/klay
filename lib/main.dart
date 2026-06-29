@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'routes/app_routes.dart';
 import 'routes/route_generator.dart';
 import 'theme/app_theme.dart';
@@ -8,7 +10,21 @@ import 'providers/user_provider.dart';
 import 'providers/album_provider.dart';
 import 'providers/library_provider.dart';
 
-void main() {
+// main() is now async because Firebase.initializeApp() is itself async —
+// it has to complete BEFORE runApp() fires, otherwise any screen that
+// touches Firestore on first frame (the Feed, via PostProvider) would
+// race against a Firebase instance that isn't ready yet and throw.
+//
+// WidgetsFlutterBinding.ensureInitialized() is required any time you do
+// async work in main() before runApp() — Flutter's engine bindings
+// normally initialize lazily on the first runApp() call, and several
+// plugins (Firebase among them) call into platform channels during
+// initializeApp(), which needs those bindings already set up.
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const KlayApp());
 }
 

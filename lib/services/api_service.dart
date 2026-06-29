@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;//This package allows Flutter to communicate with servers
 import '../models/post.dart';//Because ApiService should never return raw JSON.
-import '../models/user.dart';
+import '../models/user.dart';//All these model classes convert raw json into proper dart objects.
 import '../models/album.dart';
 import '../models/photo.dart';
 import '../models/comment.dart';
 
 // ApiService is the ONLY file in this project that imports `http` or knows
 // the base URL. Every provider goes through these methods instead of
-// calling http.get() directly — same separation-of-concerns rule as
-// firestore_service.dart in a Firebase project: one place owns "how do we
+// calling http.get() directly — one place owns "how do we
 // talk to the backend," everything else just calls methods and gets back
 // typed Dart objects (Post, User, Album...), never raw JSON.
 //ApiService is the application's networking layer. 
@@ -17,11 +16,10 @@ import '../models/comment.dart';
 //It sends requests to the backend, converts JSON responses into strongly typed model objects (Post, User, Album, etc.),
 // and returns those objects to Providers. This separation keeps UI, state management, and networking independent, making the code reusable, 
 //testable, and easy to maintain.
-class ApiService {
+class ApiService {//All networking in one place
   static const String _baseUrl = 'https://jsonplaceholder.typicode.com';
   // No call in this file is allowed to wait forever. Without a timeout,
-  // a stalled connection (flaky Wi-Fi, VPN hiccup, campus network drop —
-  // the same kind of issue that broke `flutter pub get` earlier) leaves
+  // a stalled connection (flaky Wi-Fi, VPN hiccup, campus network drop
   // http.get/post awaiting a response that may never arrive, which from
   // the UI's side looks exactly like a frozen loading spinner with no
   // error and no way to recover except restarting the app.
@@ -54,7 +52,7 @@ class ApiService {
     throw Exception('Failed to load comments (status ${response.statusCode})');
   }//Server->List of JSON comments->Comment.fromJson()->List<Comment>
 
-  // ── Author (Explore Author) ──────────────────────────────────
+  //  Author (Explore Author) 
   Future<User> fetchUser(int userId) async {
     final response = await http.get(Uri.parse('$_baseUrl/users/$userId')).timeout(_timeout);
     if (response.statusCode == 200) {
@@ -63,11 +61,10 @@ class ApiService {
     throw Exception('Failed to load user $userId (status ${response.statusCode})');
   }
 
-  // ── All Authors (Feed) ────────────────────────────────────────
   // The feed needs an author name on every post card, but JSONPlaceholder
   // only has 10 users total against 100 posts. Fetching /users/{id} once
   // PER CARD would mean up to 100 HTTP calls for one screen. Instead we
-  // fetch the full /users list ONCE (Phase 7) and let UserProvider build
+  // fetch the full /users list ONCE and let UserProvider build
   // an id -> User lookup map client-side, so every card after that is a
   // free in-memory read instead of a network call.
   Future<List<User>> fetchUsers() async {
@@ -105,7 +102,7 @@ class ApiService {
   // IMPORTANT, same caveat as always with this mock API: this returns a
   // believable 201 Created with an id (e.g. 101), but nothing is actually
   // saved server-side. Fetching /posts/101 afterwards will 404. The
-  // PostProvider (Phase 5) compensates for this by inserting the returned
+  // PostProvider compensates for this by inserting the returned
   // post into LOCAL state directly, rather than re-fetching the list.
   //
   // Note this only sends title/body/userId — the picked image and file
